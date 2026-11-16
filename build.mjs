@@ -78,5 +78,6 @@ fs.mkdirSync('dist',{recursive:true});
 fs.writeFileSync('dist/index.html',html);
 fs.writeFileSync('dist/robots.txt',`User-agent: *\nAllow: /\nSitemap: ${base}/sitemap.xml\n`);
 fs.writeFileSync('dist/sitemap.xml',`<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>${base}/</loc></url></urlset>`);
+fs.writeFileSync('dist/sitemap.txt', `${base}/\n`);
 fs.writeFileSync('dist/.nojekyll','');
 console.log(`Built ${data.length} posts / ${cats.length} categories; all post links use mobile URLs.`);
