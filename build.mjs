@@ -2,12 +2,15 @@ import fs from 'node:fs';
 import { categoryTree } from './categories.mjs';
 const base = 'https://noyeehmeen.github.io';
 const mobile = 'https://m.blog.naver.com/noyeehmeen';
+const rssUrl = 'https://rss.blog.naver.com/noyeehmeen.xml';
 const title = '노예민 블로그 사이트맵';
+const homeTitle = `${title} | 맛집·IT·생활 후기`;
+const homeDescription = '문래·영등포 식당과 카페 방문 후기, 생활용품 사용기, 스마트폰·PC 문제 해결 기록을 주제별로 찾아보세요. 글 제목에서 네이버 블로그 원문으로 연결됩니다.';
 const esc = s => String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const path = 'posts.json';
 const posts = new Map(JSON.parse(fs.readFileSync(path,'utf8').replace(/^\uFEFF/,'')).map(p=>[p.url,p]));
 if (!process.argv.includes('--offline')) {
-  const res = await fetch('https://rss.blog.naver.com/noyeehmeen.xml', {signal: AbortSignal.timeout(30000)});
+  const res = await fetch(rssUrl, {signal: AbortSignal.timeout(30000)});
   if (!res.ok) throw new Error(`RSS HTTP ${res.status}`);
   const xml = await res.text();
   const items = [...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)];
@@ -48,6 +51,14 @@ if (uncategorizedPosts.length) {
 }
 
 const categoryPages = categories.flatMap(category => [category, ...category.children]);
+const categorySubjects = {
+  '/category/food/takeout/': '배달·포장 음식 후기',
+  '/category/food/restaurants/': '식당·카페 방문 후기',
+  '/category/tech/computers/': 'PC 설정과 주변기기 사용기',
+  '/category/tech/phones-tablets/': '갤럭시 사용기와 설정',
+  '/category/living/products/': '생활용품 사용기',
+  '/category/transport/bicycles/': '자전거 수리와 용품 후기',
+};
 const legacyIds = new Map([...postsByCategory.keys()].map((name, i) => [name, `category-${i}`]));
 const icons = {'사와서먹은것':'🥡','가서먹은것':'🍽️','해서먹은것':'🍳','먹은것':'🍚','마신것':'☕','스마트폰/태블릿':'📱','노트북/PC':'💻','스마트워치':'⌚','음향기기':'🎧','자전거':'🚲','자동차':'🚗','생활정보':'💡','생활용품':'🧺','좋은향기':'🌿','건강습관만들기':'🌱','건강정보':'🩺','홈트':'🏋️','러닝':'👟','영양제/보조제':'💊','병원다니기':'🏥','안녕하세요':'👋','옷\u00a0신발':'👕','화장품':'🧴','선물학개론':'🎁','머리관리':'✂️','수염관리':'🪒','궁금증창고':'🔎','인간관계취약계층':'💬','국내':'🧳'};
 const icon = (cat,i) => '<span class="cat-icon tone-'+(i%5)+'" aria-hidden="true">'+(icons[cat]||'📖')+'</span>';
@@ -65,7 +76,18 @@ function categoryMenu(currentPath) {
     const nested = children ? `<ul class="category-children">${children}</ul>` : '';
     return `<li>${categoryLink(category, currentPath, i)}${nested}</li>`;
   }).join('');
-  return `<nav class="nav" aria-label="글 카테고리"><h2>카테고리</h2><ul class="category-links"><li>${categoryLink(all, currentPath)}</li>${groups}</ul></nav>`;
+  return `<nav class="nav" aria-label="글 카테고리"><h2 class="category-nav-title">카테고리</h2><button type="button" class="menu-toggle" aria-controls="category-menu" aria-expanded="false" hidden>카테고리 전체 보기</button><ul class="category-links" id="category-menu"><li>${categoryLink(all, currentPath)}</li>${groups}</ul></nav>`;
+}
+
+function topicShortcuts() {
+  const topics = [
+    ['/category/food/restaurants/', '식당·카페 방문 후기', '문래·영등포의 식당과 카페'],
+    ['/category/tech/', 'IT 기기와 설정', '스마트폰, PC, 기기 연결 문제'],
+    ['/category/living/products/', '생활용품 사용기', '직접 조립하고 써본 생활용품'],
+    ['/category/transport/bicycles/', '자전거 용품과 수리', '펑크와 소음, 거치대 사용기'],
+  ];
+  const links = topics.map(([path, label, detail]) => `<li><a href="${path}"><strong>${label}</strong><span>${detail}</span></a></li>`).join('');
+  return `<section class="topic-shortcuts" aria-labelledby="topic-shortcuts-heading"><h2 id="topic-shortcuts-heading">주제별로 둘러보기</h2><ul class="topic-children">${links}</ul></section>`;
 }
 
 function postSections(selectedCategories, currentPath) {
@@ -105,9 +127,33 @@ const sharedStyle = `
 .topic-children a:hover { border-color:var(--green); }
 .topic-children strong { display:block; color:var(--green); }
 .topic-children span { display:block; margin-top:4px; font-size:13px; color:var(--muted); }
+.hero .intro { max-width:58ch; }
+.topic-shortcuts { margin-bottom:26px; }
+.topic-shortcuts h2 { font-size:18px; margin:0 0 12px; }
+.topic-shortcuts .topic-children { margin:0; }
+.menu-toggle { display:none; }
 @media(max-width:760px) { .category-links, .topic-wrap .category-links { max-height:20rem; min-height:0; } .nav .cat-link { margin:2px 0; border-color:transparent; background:transparent; } .topic-wrap { padding-top:28px; } }
+@media(max-width:760px) {
+  .topic-shortcuts .topic-children { grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+  .topic-shortcuts .topic-children a { padding:10px 12px; word-break:keep-all; overflow-wrap:anywhere; }
+  .nav.has-toggle .category-nav-title { display:none; }
+  .menu-toggle { display:flex; align-items:center; justify-content:space-between; gap:12px; width:100%; padding:10px 14px; border:1px solid var(--line); border-radius:10px; background:var(--paper); color:var(--green); font:inherit; font-weight:700; cursor:pointer; }
+  .menu-toggle::after { content:''; width:8px; height:8px; border-right:2px solid currentColor; border-bottom:2px solid currentColor; transform:rotate(45deg); margin:-4px 2px 0 0; }
+  .menu-toggle[aria-expanded="true"]::after { transform:rotate(225deg); margin-top:4px; }
+  .nav.has-toggle .menu-toggle[aria-expanded="false"] + .category-links { display:none; }
+  .menu-toggle + .category-links { margin-top:8px; }
+}
 `;
 const archiveScript = `
+const menuToggle = document.querySelector('.menu-toggle');
+if (menuToggle) {
+  menuToggle.hidden = false;
+  menuToggle.closest('.nav').classList.add('has-toggle');
+  menuToggle.addEventListener('click', () => {
+    const expanded = menuToggle.getAttribute('aria-expanded') === 'true';
+    menuToggle.setAttribute('aria-expanded', String(!expanded));
+  });
+}
 const search=document.querySelector('#search');
 const sections=[...document.querySelectorAll('.category')];
 const expanded=new Set();
@@ -143,9 +189,80 @@ search.addEventListener('input',()=>{expanded.clear();render();});
 render();
 `;
 
-const html = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="google-site-verification" content="H6TtorJx-t9AjujSdW7PjEeQms2zDN9W-8OMC3fIIVc" /><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title><meta name="description" content="노예민의 섬세한 생활 기록. 음식, 생활용품, IT와 건강에 관한 네이버 블로그 글을 주제별로 찾아보세요."><meta name="robots" content="index,follow"><link rel="canonical" href="${base}/"><link rel="icon" href="/favicon.ico" sizes="48x48"><link rel="alternate" type="application/rss+xml" title="노예민 네이버 블로그 RSS" href="https://rss.blog.naver.com/noyeehmeen.xml"><meta property="og:title" content="${title}"><meta property="og:description" content="노예민 블로그 사이트맵 — 섬세한 사람의 생존기"><meta property="og:type" content="website"><meta property="og:url" content="${base}/"><style>${sharedStyle}</style></head><body><a class="skip" href="#posts">글 목록으로 이동</a><header><div class="top"><a class="brand" href="/">NOYEEHMEEN / SITEMAP</a><nav class="top-menu" aria-label="주요 메뉴"><a href="/aboutus/">인사말</a><a href="https://rss.blog.naver.com/noyeehmeen.xml">RSS 피드 ↗</a></nav></div></header><div class="wrap"><div class="hero"><div><div class="eyebrow">THE FINER THINGS IN EVERYDAY LIFE</div><h1>노예민 블로그 사이트맵</h1><p class="intro">먹고, 써보고, 알아가는 일상. 섬세한 사람의 생존기.</p></div><div class="stamp">LIFE NOTES<strong>N.</strong>BY NOYEEHMEEN</div></div><div class="overview"><div><strong>${data.length}</strong><span>개의 글</span><i></i><strong>${categoryPages.length}</strong><span>개의 주제</span></div><p>마지막 갱신 <time datetime="${new Date().toISOString()}">${updated} KST</time></p></div><div class="layout"><aside><div class="profile"><img class="profile-avatar" src="/profile.png" alt="노예민 글자가 적힌 연두색 원형 블로그 프로필" width="88" height="88"><b>노예민</b><p>@noyeehmeen<br>작은 차이도 기록으로 남깁니다.</p><a href="${mobile}">블로그에서 전체 이야기 읽기 ↗</a></div>${categoryMenu('/')}<p class="note">현재 ${data.length}개의 공개 글을 모았습니다.<br>2026년 11월 9일 공개 전체 글을 수집했으며, 이후 새 글을 자동으로 추가합니다.</p></aside><main id="posts"><div class="search"><label for="search">기록 찾기</label><input id="search" type="search" placeholder="제목이나 카테고리로 검색" aria-label="글 제목 또는 카테고리 검색"></div><p id="result" role="status" class="note" hidden></p>${postSections(categoryPages)}<p id="empty" hidden>검색 결과가 없습니다. 다른 단어로 찾아보세요.</p></main></div><footer>© 노예민 · 글 제목을 누르면 네이버 모바일 블로그 원문으로 이동합니다.<br>이곳은 블로그 글을 주제별로 찾아보는 사이트맵입니다.</footer></div><script>${archiveScript}</script></body></html>`;
+const siteNameData = JSON.stringify({
+  '@context': 'https://schema.org',
+  '@type': 'WebSite',
+  name: title,
+  alternateName: '노예민 블로그',
+  url: `${base}/`,
+  inLanguage: 'ko',
+});
+
+const html = `<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="google-site-verification" content="H6TtorJx-t9AjujSdW7PjEeQms2zDN9W-8OMC3fIIVc">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${esc(homeTitle)}</title>
+  <meta name="description" content="${esc(homeDescription)}">
+  <meta name="robots" content="index,follow">
+  <link rel="canonical" href="${base}/">
+  <link rel="icon" href="/favicon.ico" sizes="48x48">
+  <link rel="alternate" type="application/rss+xml" title="노예민 네이버 블로그 RSS" href="${rssUrl}">
+  <meta property="og:site_name" content="${title}">
+  <meta property="og:title" content="${esc(homeTitle)}">
+  <meta property="og:description" content="${esc(homeDescription)}">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="${base}/">
+  <script type="application/ld+json">${siteNameData}</script>
+  <link rel="stylesheet" href="/archive.css">
+  <script src="/archive.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#posts">글 목록으로 이동</a>
+  <header><div class="top"><a class="brand" href="/">NOYEEHMEEN / SITEMAP</a><nav class="top-menu" aria-label="주요 메뉴"><a href="/aboutus/">인사말</a><a href="${rssUrl}">RSS 피드 ↗</a></nav></div></header>
+  <main class="wrap">
+    <div class="hero">
+      <div>
+        <h1>${title}</h1>
+        <p class="intro">${homeDescription}</p>
+      </div>
+      <div class="stamp" aria-hidden="true">LIFE NOTES<strong>N.</strong>BY NOYEEHMEEN</div>
+    </div>
+    <div class="overview">
+      <div><strong>${data.length}</strong><span>개의 글</span><i></i><strong>${categoryPages.length}</strong><span>개의 주제</span></div>
+      <p>마지막 갱신 <time datetime="${new Date().toISOString()}">${updated} KST</time></p>
+    </div>
+    <div class="layout">
+      <aside>
+        <div class="profile">
+          <img class="profile-avatar" src="/profile.png" alt="노예민 글자가 적힌 연두색 원형 블로그 프로필" width="88" height="88">
+          <b>노예민</b>
+          <p>@noyeehmeen<br>작은 차이도 기록으로 남깁니다.</p>
+          <a href="${mobile}">블로그에서 전체 이야기 읽기 ↗</a>
+        </div>
+        ${categoryMenu('/')}
+        <p class="note">2026년 11월 9일 공개 전체 글을 수집했으며, 이후 새 글을 자동으로 추가합니다.</p>
+      </aside>
+      <div>
+        ${topicShortcuts()}
+        <div id="posts">
+          <div class="search"><label for="search">기록 찾기</label><input id="search" type="search" placeholder="제목이나 카테고리로 검색" aria-label="글 제목 또는 카테고리 검색"></div>
+          <p id="result" role="status" class="note" hidden></p>
+          ${postSections(categoryPages)}
+          <p id="empty" hidden>검색 결과가 없습니다. 다른 단어로 찾아보세요.</p>
+        </div>
+      </div>
+    </div>
+    <footer>© 노예민</footer>
+  </main>
+</body>
+</html>`;
+
 function categoryPage(category) {
-  const pageTitle = `${category.name} | ${category.parent ? `${category.parent.name} | ` : ''}노예민 블로그`;
+  const subject = categorySubjects[category.path] ?? category.parent?.name;
+  const pageTitle = [category.name, subject, '노예민 블로그'].filter(Boolean).join(' | ');
   const canonical = `${base}${category.path}`;
   const children = category.children.map(child => `<li><a href="${child.path}"><strong>${esc(child.name)}</strong><span>${esc(child.description)}</span></a></li>`).join('');
   const childLinks = children ? `<ul class="topic-children" aria-label="하위 카테고리">${children}</ul>` : '';
@@ -167,9 +284,15 @@ function categoryPage(category) {
   <meta name="robots" content="index,follow">
   <link rel="canonical" href="${canonical}">
   <link rel="icon" href="/favicon.ico" sizes="48x48">
-  <link rel="alternate" type="application/rss+xml" title="노예민 네이버 블로그 RSS" href="https://rss.blog.naver.com/noyeehmeen.xml">
+  <link rel="alternate" type="application/rss+xml" title="노예민 네이버 블로그 RSS" href="${rssUrl}">
+  <meta property="og:site_name" content="${title}">
+  <meta property="og:title" content="${esc(pageTitle)}">
+  <meta property="og:description" content="${esc(category.description)}">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="${canonical}">
   <script type="application/ld+json">${breadcrumbData}</script>
-  <style>${sharedStyle}</style>
+  <link rel="stylesheet" href="/archive.css">
+  <script src="/archive.js" defer></script>
 </head>
 <body>
   <a class="skip" href="#posts">글 목록으로 이동</a>
@@ -188,13 +311,14 @@ function categoryPage(category) {
       </main>
     </div>
   </div>
-  <script>${archiveScript}</script>
 </body>
 </html>`;
 }
 
 fs.mkdirSync('dist',{recursive:true});
 fs.writeFileSync('dist/index.html',html);
+fs.writeFileSync('dist/archive.css', sharedStyle);
+fs.writeFileSync('dist/archive.js', archiveScript);
 fs.copyFileSync('favicon.ico', 'dist/favicon.ico');
 fs.copyFileSync('profile.png', 'dist/profile.png');
 fs.mkdirSync('dist/aboutus', { recursive: true });
