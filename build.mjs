@@ -5,10 +5,37 @@ const mobile = 'https://m.blog.naver.com/noyeehmeen';
 const rssUrl = 'https://rss.blog.naver.com/noyeehmeen.xml';
 const title = '노예민 블로그 사이트맵';
 const homeTitle = `${title} | 맛집·IT·생활 후기`;
-const homeDescription = '문래·영등포 식당과 카페 방문 후기, 생활용품 사용기, 스마트폰·PC 문제 해결 기록을 주제별로 찾아보세요. 글 제목에서 네이버 블로그 원문으로 연결됩니다.';
+const homeDescription = '문래·영등포 식당과 카페 방문 후기, 생활용품 사용기, 스마트폰·PC 문제 해결 기록을 주제별로 찾아보세요. 각 글의 짧은 소개와 네이버 블로그 원문 링크를 함께 제공합니다.';
 const esc = s => String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const path = 'posts.json';
+const postDetails = JSON.parse(fs.readFileSync('post-details.json', 'utf8'));
 const posts = new Map(JSON.parse(fs.readFileSync(path,'utf8').replace(/^\uFEFF/,'')).map(p=>[p.url,p]));
+
+const textEntities = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', hellip: '…' };
+
+function rssText(value) {
+  return value.replace(/<[^>]*>/g, ' ').replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (entity, key) => {
+    if (key[0] !== '#') return textEntities[key.toLowerCase()] ?? entity;
+    const code = key[1].toLowerCase() === 'x' ? parseInt(key.slice(2), 16) : Number(key.slice(1));
+    return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : entity;
+  }).replace(/[\u200b\ufeff]/g, '').replace(/\s+/g, ' ').trim();
+}
+
+function rssPreview(value) {
+  const preview = rssText(value).replace(/\.{3,}$/, '…');
+  if (preview.length <= 126) return preview;
+  const sentence = [...preview.slice(0, 126).matchAll(/[.!?](?=\s|$)/g)].at(-1);
+  if (sentence?.index >= 45) return preview.slice(0, sentence.index + 1);
+  const words = preview.slice(0, 126).replace(/\s+\S*$/, '').trimEnd();
+  return (words.length >= 55 ? words : preview.slice(0, 126)).replace(/[.…,]+$/, '') + '…';
+}
+
+function rssTags(value) {
+  const tags = rssText(value).split(',').map(tag => tag.trim().replace(/^#+/, ''));
+  const excluded = /^(?:노예민|리빙테크드|아무튼건강|noyeehmeen|livingteched|[a-z]+\d+kg|\d+)$/i;
+  return [...new Set(tags)].filter(tag => /^[\p{L}\p{N}_-]{2,24}$/u.test(tag) && !excluded.test(tag)).slice(0, 4);
+}
+
 if (!process.argv.includes('--offline')) {
   const res = await fetch(rssUrl, {signal: AbortSignal.timeout(30000)});
   if (!res.ok) throw new Error(`RSS HTTP ${res.status}`);
@@ -21,7 +48,17 @@ if (!process.argv.includes('--offline')) {
     const date = new Date(tag(item,'pubDate'));
     if (!id || !tag(item,'title') || isNaN(date)) throw new Error('Unexpected RSS post format');
     const url = `${mobile}/${id}`;
-    posts.set(url,{title:tag(item,'title'),category:tag(item,'category')||'기타',url,date:new Date(date.getTime()+9*3600000).toISOString().slice(0,10)});
+    const previous = posts.get(url);
+    const preview = rssPreview(tag(item, 'description')) || previous?.preview;
+    const tags = rssTags(tag(item, 'tag'));
+    posts.set(url, {
+      title: tag(item, 'title'),
+      category: tag(item, 'category') || '기타',
+      url,
+      date: new Date(date.getTime() + 9 * 3600000).toISOString().slice(0, 10),
+      ...(preview && { preview }),
+      ...(tags.length && { tags }),
+    });
   }
 }
 const data = [...posts.values()].sort((a,b)=>b.date.localeCompare(a.date)||b.url.localeCompare(a.url));
@@ -95,7 +132,25 @@ function postSections(selectedCategories, currentPath) {
     const id = legacyIds.get(category.name) ?? 'category-other';
     const rows = category.posts.map(post => {
       const searchCategory = [post.category, category.parent?.name].filter(Boolean).join(' ');
-      return `<li data-category="${esc(searchCategory)}"><a href="${post.url}">${esc(post.title)}</a><time datetime="${post.date}">${post.date.replaceAll('-','. ')}</time></li>`;
+      const postId = post.url.split('/').at(-1);
+      const details = postDetails[postId];
+      const preview = details?.preview || post.preview || `${post.category} 카테고리에 올린 글입니다. 자세한 내용은 원문에서 읽을 수 있어요.`;
+      const tags = (details?.tags ?? post.tags ?? []).map(tag => `<span>#${esc(tag)}</span>`).join('');
+      return `<li class="post-entry" data-category="${esc(searchCategory)}">
+        <article>
+          <a class="post-card" href="${post.url}" aria-labelledby="post-${postId}-title post-${postId}-link">
+            <div class="post-heading">
+              <h3 id="post-${postId}-title">${esc(post.title)}</h3>
+              <time datetime="${post.date}">${post.date.replaceAll('-','. ')}</time>
+            </div>
+            <p class="post-preview">${esc(preview)}</p>
+            <div class="post-footer">
+              ${tags ? `<div class="post-tags">${tags}</div>` : ''}
+              <span class="post-read" id="post-${postId}-link">네이버 블로그 원문 <span aria-hidden="true">↗</span></span>
+            </div>
+          </a>
+        </article>
+      </li>`;
     }).join('');
     const heading = currentPath === category.path ? '글 목록' : `<a href="${category.path}">${esc(category.name)}</a>`;
     return `<section id="${id}" class="category"><div class="section-title"><h2>${icon(category.name, i)}${heading}</h2><span>${category.posts.length}개의 기록</span></div><ul>${rows}</ul></section>`;
@@ -131,11 +186,27 @@ const sharedStyle = `
 .topic-shortcuts { margin-bottom:26px; }
 .topic-shortcuts h2 { font-size:18px; margin:0 0 12px; }
 .topic-shortcuts .topic-children { margin:0; }
+.category .post-entry { display:block; padding:16px 0; }
+.category .post-entry:last-child { padding-bottom:0; }
+.category .post-card { display:block; padding:4px 0; }
+.category .post-card:hover { color:inherit; text-decoration:none; }
+.post-heading { display:flex; align-items:baseline; justify-content:space-between; gap:6px 16px; }
+.post-heading h3 { margin:0; font-size:16px; line-height:1.55; }
+.post-card:hover .post-heading h3 { color:var(--green); text-decoration:underline; }
+.post-preview { margin:6px 0 11px; color:#52645a; line-height:1.65; }
+.post-footer { display:flex; align-items:center; flex-wrap:wrap; gap:8px 16px; }
+.post-tags { display:flex; flex-wrap:wrap; gap:4px 6px; }
+.post-tags span { padding:2px 8px; border-radius:6px; background:#eef3e9; color:#365747; font-size:12px; }
+.post-read { margin-left:auto; color:var(--green); font-size:12px; font-weight:700; text-decoration:underline; text-underline-offset:3px; }
 .menu-toggle { display:none; }
 @media(max-width:760px) { .category-links, .topic-wrap .category-links { max-height:20rem; min-height:0; } .nav .cat-link { margin:2px 0; border-color:transparent; background:transparent; } .topic-wrap { padding-top:28px; } }
 @media(max-width:760px) {
   .topic-shortcuts .topic-children { grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
   .topic-shortcuts .topic-children a { padding:10px 12px; word-break:keep-all; overflow-wrap:anywhere; }
+  .post-heading { flex-wrap:wrap; }
+  .post-heading h3 { flex-basis:100%; }
+  .post-footer { align-items:flex-start; flex-direction:column; }
+  .post-read { margin-left:0; }
   .nav.has-toggle .category-nav-title { display:none; }
   .menu-toggle { display:flex; align-items:center; justify-content:space-between; gap:12px; width:100%; padding:10px 14px; border:1px solid var(--line); border-radius:10px; background:var(--paper); color:var(--green); font:inherit; font-weight:700; cursor:pointer; }
   .menu-toggle::after { content:''; width:8px; height:8px; border-right:2px solid currentColor; border-bottom:2px solid currentColor; transform:rotate(45deg); margin:-4px 2px 0 0; }
@@ -169,7 +240,11 @@ function render(){
   const q=search.value.trim().toLocaleLowerCase();let total=0;
   for(const section of sections){
     const rows=[...section.querySelectorAll('li')];
-    const matches=rows.filter(li=>(li.textContent+' '+li.dataset.category+' '+section.querySelector('h2').textContent).toLocaleLowerCase().includes(q));
+    const heading = section.querySelector('h2').textContent;
+    const matches = rows.filter(row => {
+      const text = [...row.querySelectorAll('.post-heading, .post-preview, .post-tags')].map(element => element.textContent);
+      return [...text, row.dataset.category, heading].join(' ').toLocaleLowerCase().includes(q);
+    });
     const isExpanded=expanded.has(section.id);
     const visible=new Set(isExpanded?matches:matches.slice(0,10));
     for(const li of rows)li.hidden=!visible.has(li);
