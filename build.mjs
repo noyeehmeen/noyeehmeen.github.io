@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { createHash } from 'node:crypto';
 import { categoryTree } from './categories.mjs';
 const base = 'https://noyeehmeen.github.io';
 const mobile = 'https://m.blog.naver.com/noyeehmeen';
@@ -224,6 +225,7 @@ const sharedStyle = `
   .menu-toggle + .category-links { margin-top:8px; }
 }
 `;
+const stylesheetUrl = `/archive.css?v=${createHash('sha256').update(sharedStyle).digest('hex').slice(0, 12)}`;
 const archiveScript = `
 const menuToggle = document.querySelector('.menu-toggle');
 if (menuToggle) {
@@ -300,7 +302,7 @@ const html = `<!doctype html>
   <meta property="og:type" content="website">
   <meta property="og:url" content="${base}/">
   <script type="application/ld+json">${siteNameData}</script>
-  <link rel="stylesheet" href="/archive.css">
+  <link rel="stylesheet" href="${stylesheetUrl}">
   <script src="/archive.js" defer></script>
 </head>
 <body>
@@ -384,7 +386,7 @@ function categoryPage(category) {
   <meta property="og:type" content="website">
   <meta property="og:url" content="${canonical}">
   <script type="application/ld+json">${trail.data}</script>
-  <link rel="stylesheet" href="/archive.css">
+  <link rel="stylesheet" href="${stylesheetUrl}">
   <script src="/archive.js" defer></script>
 </head>
 <body>
@@ -428,7 +430,7 @@ function postPage(post, view) {
   <meta property="og:type" content="website">
   <meta property="og:url" content="${canonical}">
   <script type="application/ld+json">${trail.data}</script>
-  <link rel="stylesheet" href="/archive.css">
+  <link rel="stylesheet" href="${stylesheetUrl}">
 </head>
 <body>
   <a class="skip" href="#post">글 소개로 이동</a>
