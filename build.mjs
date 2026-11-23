@@ -70,7 +70,7 @@ for (const post of data) {
 
 function buildCategory([slug, name, description, children = []], parent = null) {
   const path = `${parent?.path ?? '/category/'}${slug}/`;
-  const category = { name, description, path, parent, posts: postsByCategory.get(name) ?? [] };
+  const category = { slug, name, description, path, parent, posts: postsByCategory.get(name) ?? [] };
   category.children = children.map(child => buildCategory(child, category));
   category.count = category.posts.length + category.children.reduce((count, child) => count + child.count, 0);
   return category;
@@ -80,20 +80,23 @@ const categories = categoryTree.map(entry => buildCategory(entry));
 const knownNames = new Set(categories.flatMap(category => [category.name, ...category.children.map(child => child.name)]));
 const uncategorizedPosts = data.filter(post => !knownNames.has(categoryKey(post.category)));
 if (uncategorizedPosts.length) {
-  categories.push({ name: '기타', path: '/category/other/', description: '기존 분류에 속하지 않는 노예민 블로그의 공개 글을 모았습니다.', posts: uncategorizedPosts, children: [], count: uncategorizedPosts.length });
+  categories.push({ slug: 'other', name: '기타', path: '/category/other/', description: '기존 분류에 속하지 않는 노예민 블로그의 공개 글을 모았습니다.', posts: uncategorizedPosts, children: [], count: uncategorizedPosts.length });
 }
 
 const categoryPages = categories.flatMap(category => [category, ...category.children]);
+const categoriesByPath = new Map(categoryPages.map(category => [category.path, category]));
 const linksPerGroup = 15;
 for (const category of categoryPages) {
   const total = Math.ceil(category.posts.length / linksPerGroup);
   category.groups = Array.from({ length: total }, (_, index) => ({
     number: index + 1,
     title: total > 1 ? `${category.name} ${index + 1}` : category.name,
-    path: index === 0 ? category.path : `${category.path}page/${index + 1}/`,
+    path: `/posts/${category.slug}${index ? `-${index + 1}` : ''}/`,
+    oldPath: index ? `${category.path}page/${index + 1}/` : category.path,
     posts: category.posts.slice(index * linksPerGroup, (index + 1) * linksPerGroup),
   }));
 }
+const entryPath = category => !category.children?.length && category.groups?.length ? category.groups[0].path : category.path;
 const categorySubjects = {
   '/category/food/takeout/': '배달·포장 음식 후기',
   '/category/food/restaurants/': '식당·카페 방문 후기',
@@ -106,9 +109,10 @@ const icons = {'사와서먹은것':'🥡','가서먹은것':'🍽️','해서�
 const icon = (cat,i) => '<span class="cat-icon tone-'+(i%5)+'" aria-hidden="true">'+(icons[cat]||'📖')+'</span>';
 const updated = new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date());
 function categoryLink(category, currentPath, tone = 0) {
-  const active = category.path === currentPath;
+  const href = entryPath(category);
+  const active = href === currentPath;
   const current = active ? ' aria-current="page"' : '';
-  return `<a class="cat-link${active ? ' active' : ''}" href="${category.path}"${current}>${icon(category.name, tone)}<span class="cat-name">${esc(category.name)}</span><span class="cat-count">${category.count}</span></a>`;
+  return `<a class="cat-link${active ? ' active' : ''}" href="${href}"${current}>${icon(category.name, tone)}<span class="cat-name">${esc(category.name)}</span><span class="cat-count">${category.count}</span></a>`;
 }
 
 function categoryMenu(currentPath) {
@@ -128,7 +132,7 @@ function topicShortcuts() {
     ['/category/living/products/', '생활용품 사용기', '직접 조립하고 써본 생활용품'],
     ['/category/transport/bicycles/', '자전거 용품과 수리', '펑크와 소음, 거치대 사용기'],
   ];
-  const links = topics.map(([path, label, detail]) => `<li><a href="${path}"><strong>${label}</strong><span>${detail}</span></a></li>`).join('');
+  const links = topics.map(([path, label, detail]) => `<li><a href="${entryPath(categoriesByPath.get(path))}"><strong>${label}</strong><span>${detail}</span></a></li>`).join('');
   return `<section class="topic-shortcuts" aria-labelledby="topic-shortcuts-heading"><h2 id="topic-shortcuts-heading">주제별로 둘러보기</h2><ul class="topic-children">${links}</ul></section>`;
 }
 
@@ -140,7 +144,7 @@ function groupIndex() {
   return categories.filter(category => category.count).map((category, index) => {
     const groups = [category, ...category.children].flatMap(item => item.groups);
     const heading = category.children.length || groups.length > 1
-      ? `<h2 class="group-index-heading">${icon(category.name, index)}<a href="${category.path}">${esc(category.name)}</a></h2>`
+      ? `<h2 class="group-index-heading">${icon(category.name, index)}<a href="${entryPath(category)}">${esc(category.name)}</a></h2>`
       : '';
     const items = groups.map(group => {
       const keywords = group.posts.map(post => `${post.title} ${postPreview(post)} ${post.date}`).join(' ');
@@ -152,18 +156,16 @@ function groupIndex() {
   }).join('');
 }
 
-function originalList(group, category) {
+function originalList(group) {
   const items = group.posts.map(post => {
     const id = postId(post);
-    return `<li id="post-${id}" data-search-item data-keywords="${esc(`${category.name} ${post.date}`)}">
-      <article>
-        <h2 id="title-${id}">${esc(post.title)}</h2>
-        <p>${esc(postPreview(post))}</p>
-        <a id="original-${id}" href="${post.url}" aria-labelledby="title-${id} original-${id}">${post.url}</a>
-      </article>
+    return `<li id="post-${id}">
+      <h2 id="title-${id}">${esc(post.title)}</h2>
+      <p>${esc(postPreview(post))}</p>
+      <a id="original-${id}" href="${post.url}" aria-labelledby="title-${id} original-${id}">${post.url}</a>
     </li>`;
   }).join('');
-  return `<section class="category original-list" aria-label="${esc(group.title)}의 글" data-search-section><ul>${items}</ul></section>`;
+  return `<ul class="original-list" aria-label="${esc(group.title)}의 글">${items}</ul>`;
 }
 
 function pagination(category, group) {
@@ -207,14 +209,19 @@ const sharedStyle = `
 .group-index ul li { display:block; padding:0; }
 .group-index li a { display:flex; justify-content:space-between; align-items:center; gap:8px 16px; min-height:44px; padding:8px 0; }
 .group-index li a span { flex:none; color:var(--muted); font-size:12px; }
-.original-list { padding:8px clamp(18px,4vw,32px); }
-.original-list ul li { display:block; padding:21px 0 24px; scroll-margin-top:24px; }
-.original-list ul li:last-child { padding-bottom:21px; }
-.original-list li:target article { border-left:3px solid var(--green); padding-left:12px; }
+.grouped-post { max-width:800px; }
+.grouped-post .post-back { display:inline-block; margin-bottom:14px; color:var(--green); font-size:14px; text-underline-offset:3px; }
+.grouped-post article { padding:clamp(20px,5vw,46px); border:1px solid var(--line); border-radius:16px; background:var(--paper); }
+.post-intro { padding:0 0 24px; background:transparent; }
+.post-intro h1 { margin:0 0 12px; font-size:clamp(27px,5vw,42px); word-break:keep-all; overflow-wrap:anywhere; }
+.post-intro p { margin:0; color:#52645a; line-height:1.75; word-break:keep-all; overflow-wrap:anywhere; }
+.original-list > li { padding:23px 0; border-bottom:1px solid var(--line); scroll-margin-top:24px; }
+.original-list > li:last-child { padding-bottom:0; border-bottom:0; }
+.original-list > li:target { border-left:3px solid var(--green); padding-left:14px; }
 .original-list h2 { margin:0; font-size:17px; line-height:1.6; word-break:keep-all; overflow-wrap:anywhere; }
 .original-list p { margin:5px 0 9px; color:#52645a; line-height:1.75; word-break:keep-all; overflow-wrap:anywhere; }
 .original-list li a { display:inline-block; color:#176047; text-decoration:underline; text-underline-offset:3px; overflow-wrap:anywhere; word-break:normal; }
-.group-pagination { display:flex; flex-wrap:wrap; gap:7px; margin:0 0 18px; }
+.group-pagination { display:flex; flex-wrap:wrap; gap:7px; margin:20px 0 0; }
 .group-pagination a,.group-pagination span { min-width:42px; min-height:42px; display:grid; place-items:center; border-radius:8px; border:1px solid var(--line); background:var(--paper); font-size:14px; font-weight:700; text-decoration:none; }
 .group-pagination a:hover { border-color:var(--green); }
 .group-pagination [aria-current="page"] { border-color:var(--green); background:var(--green); color:#fff; }
@@ -276,6 +283,7 @@ if (search) {
 }
 `;
 const scriptUrl = `/archive.js?v=${createHash('sha256').update(archiveScript).digest('hex').slice(0, 12)}`;
+const siteHeader = `<header><div class="top"><a class="brand" href="/">NOYEEHMEEN / SITEMAP</a><nav class="top-menu" aria-label="주요 메뉴"><a href="/aboutus/">인사말</a><a href="${rssUrl}">RSS 피드 ↗</a></nav></div></header>`;
 
 const siteNameData = JSON.stringify({
   '@context': 'https://schema.org',
@@ -309,7 +317,7 @@ const html = `<!doctype html>
 </head>
 <body>
   <a class="skip" href="#posts">글 목록으로 이동</a>
-  <header><div class="top"><a class="brand" href="/">NOYEEHMEEN / SITEMAP</a><nav class="top-menu" aria-label="주요 메뉴"><a href="/aboutus/">인사말</a><a href="${rssUrl}">RSS 피드 ↗</a></nav></div></header>
+  ${siteHeader}
   <main class="wrap">
     <div class="hero">
       <div>
@@ -363,33 +371,9 @@ function breadcrumb(crumbs) {
   return { markup: `<nav class="breadcrumb" aria-label="현재 위치">${[...links, current].join(' › ')}</nav>`, data };
 }
 
-function categoryPage(category, group = category.groups[0]) {
-  const currentPath = group?.path ?? category.path;
-  const heading = group?.title ?? category.name;
-  const subject = categorySubjects[category.path] ?? category.parent?.name;
-  const pageTitle = [heading, subject, '노예민 블로그'].filter(Boolean).join(' | ');
-  const canonical = `${base}${currentPath}`;
-  const description = category.groups.length > 1
-    ? `${category.description} ${group.number}번째 묶음의 글 ${group.posts.length}개를 소개합니다.`
-    : category.description;
-  const children = category.children.map(child => `<li><a href="${child.path}"><strong>${esc(child.name)}</strong><span>${esc(child.description)}</span></a></li>`).join('');
-  const childLinks = children ? `<ul class="topic-children" aria-label="하위 카테고리">${children}</ul>` : '';
-  const crumbs = categoryTrail(category);
-  if (currentPath === category.path) crumbs[crumbs.length - 1] = { name: heading, path: currentPath };
-  else crumbs.push({ name: heading, path: currentPath });
-  const trail = breadcrumb(crumbs);
-  const pager = pagination(category, group);
-  const records = group ? `
-    ${pager}
-    <div class="search"><label for="search">기록 찾기</label><input id="search" type="search" placeholder="이 묶음에서 검색" aria-label="이 묶음에서 검색"></div>
-    <p id="result" role="status" class="note" data-unit="글" hidden></p>
-    ${originalList(group, category)}
-    <p id="empty" hidden>검색 결과가 없습니다. 다른 단어로 찾아보세요.</p>
-    ${pager}` : '';
-
-  return `<!doctype html>
-<html lang="ko">
-<head>
+function pageHead({ pageTitle, description, pagePath, structuredData, article = false }) {
+  const canonical = `${base}${pagePath}`;
+  return `<head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>${esc(pageTitle)}</title>
@@ -401,23 +385,35 @@ function categoryPage(category, group = category.groups[0]) {
   <meta property="og:site_name" content="${title}">
   <meta property="og:title" content="${esc(pageTitle)}">
   <meta property="og:description" content="${esc(description)}">
-  <meta property="og:type" content="website">
+  <meta property="og:type" content="${article ? 'article' : 'website'}">
   <meta property="og:url" content="${canonical}">
-  <script type="application/ld+json">${trail.data}</script>
+  <script type="application/ld+json">${structuredData}</script>
   <link rel="stylesheet" href="${stylesheetUrl}">
-  <script src="${scriptUrl}" defer></script>
-</head>
+  ${article ? '' : `<script src="${scriptUrl}" defer></script>`}
+</head>`;
+}
+
+function categoryIndex(category) {
+  const trail = breadcrumb(categoryTrail(category));
+  const pageTitle = [category.name, category.parent?.name, '노예민 블로그'].filter(Boolean).join(' | ');
+  const items = [
+    ...category.groups.map(group => ({ name: group.title, path: group.path, description: `${group.posts.length}개 글` })),
+    ...category.children.map(child => ({ name: child.name, path: entryPath(child), description: child.description })),
+  ];
+  const children = items.map(item => `<li><a href="${item.path}"><strong>${esc(item.name)}</strong><span>${esc(item.description)}</span></a></li>`).join('');
+  return `<!doctype html>
+<html lang="ko">
+${pageHead({ pageTitle, description: category.description, pagePath: category.path, structuredData: trail.data })}
 <body>
   <a class="skip" href="#posts">글 목록으로 이동</a>
-  <header><div class="top"><a class="brand" href="/">NOYEEHMEEN / SITEMAP</a><nav class="top-menu" aria-label="주요 메뉴"><a href="/aboutus/">인사말</a><a href="${rssUrl}">RSS 피드 ↗</a></nav></div></header>
+  ${siteHeader}
   <div class="wrap topic-wrap">
     <div class="layout">
-      <aside>${categoryMenu(currentPath)}</aside>
+      <aside>${categoryMenu(category.path)}</aside>
       <main id="posts">
         ${trail.markup}
-        <div class="topic-summary"><h1>${esc(heading)}</h1><p>${esc(category.description)}</p></div>
-        ${childLinks}
-        ${records}
+        <div class="topic-summary"><h1>${esc(category.name)}</h1><p>${esc(category.description)}</p></div>
+        ${children ? `<ul class="topic-children" aria-label="주제별 글">${children}</ul>` : ''}
       </main>
     </div>
   </div>
@@ -425,23 +421,59 @@ function categoryPage(category, group = category.groups[0]) {
 </html>`;
 }
 
-function postRedirect(post, group) {
-  const canonical = `${base}${group.path}`;
-  const target = `${canonical}#post-${postId(post)}`;
+function groupPost(category, group) {
+  const subject = categorySubjects[category.path] ?? category.parent?.name;
+  const pageTitle = [group.title, subject, '노예민 블로그'].filter(Boolean).join(' | ');
+  const description = category.groups.length > 1
+    ? `${category.description} ${group.number}번째 묶음의 글 ${group.posts.length}개를 소개합니다.`
+    : category.description;
+  const structuredData = JSON.stringify({
+    '@context': 'https://schema.org',
+    '@type': 'BlogPosting',
+    headline: group.title,
+    description,
+    mainEntityOfPage: `${base}${group.path}`,
+    author: { '@type': 'Person', name: '노예민', url: `${base}/aboutus/` },
+  }).replaceAll('<', '\\u003c');
+  return `<!doctype html>
+<html lang="ko">
+${pageHead({ pageTitle, description, pagePath: group.path, structuredData, article: true })}
+<body>
+  <a class="skip" href="#post">글 본문으로 이동</a>
+  ${siteHeader}
+  <main class="wrap grouped-post" id="post">
+    <a class="post-back" href="/">← 전체 글 보기</a>
+    <article aria-labelledby="post-title">
+      <header class="post-intro">
+        <h1 id="post-title">${esc(group.title)}</h1>
+        <p>${esc(category.description)}</p>
+      </header>
+      ${originalList(group)}
+      ${pagination(category, group)}
+    </article>
+  </main>
+</body>
+</html>`;
+}
+
+function redirectPage(name, pagePath, anchor = '') {
+  const canonical = `${base}${pagePath}`;
+  const target = canonical + anchor;
   return `<!doctype html>
 <html lang="ko">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  ${anchor ? '' : `<script>if (/^#post-[0-9]+$/.test(location.hash)) location.replace(${JSON.stringify(canonical)} + location.hash);</script>`}
   <meta http-equiv="refresh" content="0; url=${target}">
-  <title>${esc(post.title)}</title>
+  <title>${esc(name)}</title>
   <link rel="canonical" href="${canonical}">
   <link rel="stylesheet" href="${stylesheetUrl}">
 </head>
 <body>
   <main class="wrap">
-    <h1>${esc(post.title)}</h1>
-    <a href="${target}">${esc(group.title)} 묶음에서 보기</a>
+    <h1>${esc(name)}</h1>
+    <a href="${target}">글 열기</a>
   </main>
 </body>
 </html>`;
@@ -456,27 +488,36 @@ fs.copyFileSync('profile.png', 'dist/profile.png');
 fs.mkdirSync('dist/aboutus', { recursive: true });
 fs.copyFileSync('aboutus.html', 'dist/aboutus/index.html');
 fs.writeFileSync('dist/robots.txt',`User-agent: *\nAllow: /\nSitemap: ${base}/sitemap.xml\n`);
-const categoryPaths = [];
+function writePage(route, page) {
+  const directory = `dist${route}`;
+  fs.mkdirSync(directory, { recursive: true });
+  fs.writeFileSync(`${directory}index.html`, page);
+}
+
+const sitemapPaths = new Set(['/', '/aboutus/']);
 let groupCount = 0;
 for (const category of categoryPages) {
-  for (const group of category.groups.length ? category.groups : [undefined]) {
-    const route = group?.path ?? category.path;
-    const directory = `dist${route}`;
-    fs.mkdirSync(directory, { recursive: true });
-    fs.writeFileSync(`${directory}index.html`, categoryPage(category, group));
-    categoryPaths.push(route);
-    if (!group) continue;
+  const keepIndex = entryPath(category) === category.path;
+  if (keepIndex) {
+    writePage(category.path, categoryIndex(category));
+    sitemapPaths.add(category.path);
+  }
+  for (const group of category.groups) {
+    if (sitemapPaths.has(group.path)) throw new Error(`Duplicate grouped post path: ${group.path}`);
+    writePage(group.path, groupPost(category, group));
+    sitemapPaths.add(group.path);
     groupCount += 1;
+    if (!keepIndex || group.oldPath !== category.path) {
+      writePage(group.oldPath, redirectPage(group.title, group.path));
+    }
     for (const post of group.posts) {
       const id = postId(post);
       if (!postDetails[id]) continue;
-      const oldDirectory = `dist/posts/${id}/`;
-      fs.mkdirSync(oldDirectory, { recursive: true });
-      fs.writeFileSync(`${oldDirectory}index.html`, postRedirect(post, group));
+      writePage(`/posts/${id}/`, redirectPage(post.title, group.path, `#post-${id}`));
     }
   }
 }
-const sitemapUrls = ['/', '/aboutus/', ...categoryPaths].map(path => `${base}${path}`);
+const sitemapUrls = [...sitemapPaths].map(path => `${base}${path}`);
 const sitemapEntries = sitemapUrls.map(url => `  <url><loc>${esc(url)}</loc></url>`);
 fs.writeFileSync('dist/sitemap.xml', `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${sitemapEntries.join('\n')}\n</urlset>\n`);
 fs.writeFileSync('dist/sitemap.txt', `${sitemapUrls.join('\n')}\n`);
