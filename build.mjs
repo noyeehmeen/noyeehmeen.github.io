@@ -88,6 +88,7 @@ if (uncategorizedPosts.length) {
 }
 
 const categoryPages = categories.flatMap(category => [category, ...category.children]);
+const postCategories = new Map(categoryPages.flatMap(category => category.posts.map(post => [post.url, category])));
 const categorySubjects = {
   '/category/food/takeout/': '배달·포장 음식 후기',
   '/category/food/restaurants/': '식당·카페 방문 후기',
@@ -127,28 +128,31 @@ function topicShortcuts() {
   return `<section class="topic-shortcuts" aria-labelledby="topic-shortcuts-heading"><h2 id="topic-shortcuts-heading">주제별로 둘러보기</h2><ul class="topic-children">${links}</ul></section>`;
 }
 
+function postPresentation(post) {
+  const id = post.url.split('/').at(-1);
+  const details = postDetails[id];
+  const preview = details?.preview || post.preview || `${post.category} 카테고리에 올린 글입니다. 자세한 내용은 원문에서 읽을 수 있어요.`;
+  const tags = (details?.tags ?? post.tags ?? []).map(tag => `<span>#${esc(tag)}</span>`).join('');
+  return { id, path: `/posts/${id}/`, preview, tags: tags ? `<div class="post-tags">${tags}</div>` : '' };
+}
+
 function postSections(selectedCategories, currentPath) {
   return selectedCategories.filter(category => category.posts.length).map((category, i) => {
     const id = legacyIds.get(category.name) ?? 'category-other';
     const rows = category.posts.map(post => {
       const searchCategory = [post.category, category.parent?.name].filter(Boolean).join(' ');
-      const postId = post.url.split('/').at(-1);
-      const details = postDetails[postId];
-      const preview = details?.preview || post.preview || `${post.category} 카테고리에 올린 글입니다. 자세한 내용은 원문에서 읽을 수 있어요.`;
-      const tags = (details?.tags ?? post.tags ?? []).map(tag => `<span>#${esc(tag)}</span>`).join('');
+      const view = postPresentation(post);
       return `<li class="post-entry" data-category="${esc(searchCategory)}">
         <article>
-          <a class="post-card" href="${post.url}" aria-labelledby="post-${postId}-title post-${postId}-link">
-            <div class="post-heading">
-              <h3 id="post-${postId}-title">${esc(post.title)}</h3>
-              <time datetime="${post.date}">${post.date.replaceAll('-','. ')}</time>
-            </div>
-            <p class="post-preview">${esc(preview)}</p>
-            <div class="post-footer">
-              ${tags ? `<div class="post-tags">${tags}</div>` : ''}
-              <span class="post-read" id="post-${postId}-link">네이버 블로그 원문 <span aria-hidden="true">↗</span></span>
-            </div>
-          </a>
+          <div class="post-heading">
+            <h3 id="post-${view.id}-title"><a href="${view.path}">${esc(post.title)}</a></h3>
+            <time datetime="${post.date}">${post.date.replaceAll('-','. ')}</time>
+          </div>
+          <p class="post-preview">${esc(view.preview)}</p>
+          <div class="post-footer">
+            ${view.tags}
+            <a class="post-read" id="post-${view.id}-link" href="${post.url}" aria-labelledby="post-${view.id}-link post-${view.id}-title">네이버 블로그 원문 <span aria-hidden="true">↗</span></a>
+          </div>
         </article>
       </li>`;
     }).join('');
@@ -188,16 +192,21 @@ const sharedStyle = `
 .topic-shortcuts .topic-children { margin:0; }
 .category .post-entry { display:block; padding:16px 0; }
 .category .post-entry:last-child { padding-bottom:0; }
-.category .post-card { display:block; padding:4px 0; }
-.category .post-card:hover { color:inherit; text-decoration:none; }
 .post-heading { display:flex; align-items:baseline; justify-content:space-between; gap:6px 16px; }
 .post-heading h3 { margin:0; font-size:16px; line-height:1.55; }
-.post-card:hover .post-heading h3 { color:var(--green); text-decoration:underline; }
+.category .post-heading a { font-size:inherit; }
 .post-preview { margin:6px 0 11px; color:#52645a; line-height:1.65; }
 .post-footer { display:flex; align-items:center; flex-wrap:wrap; gap:8px 16px; }
 .post-tags { display:flex; flex-wrap:wrap; gap:4px 6px; }
 .post-tags span { padding:2px 8px; border-radius:6px; background:#eef3e9; color:#365747; font-size:12px; }
-.post-read { margin-left:auto; color:var(--green); font-size:12px; font-weight:700; text-decoration:underline; text-underline-offset:3px; }
+.post-footer .post-read { margin-left:auto; color:var(--green); font-size:12px; font-weight:700; text-decoration:underline; text-underline-offset:3px; }
+.post-detail { max-width:800px; }
+.post-detail article { padding:clamp(22px,5vw,52px); border:1px solid var(--line); border-radius:16px; background:var(--paper); }
+.post-detail h1 { margin:0 0 10px; font-size:clamp(25px,4vw,38px); word-break:keep-all; overflow-wrap:anywhere; }
+.post-detail time { font-size:13px; }
+.post-detail .post-preview { margin:24px 0 16px; }
+.post-original { display:inline-block; margin-top:26px; padding:9px 16px; border-radius:8px; background:var(--green); color:white; font-size:14px; font-weight:700; text-decoration:none; }
+.post-original:hover { text-decoration:underline; }
 .menu-toggle { display:none; }
 @media(max-width:760px) { .category-links, .topic-wrap .category-links { max-height:20rem; min-height:0; } .nav .cat-link { margin:2px 0; border-color:transparent; background:transparent; } .topic-wrap { padding-top:28px; } }
 @media(max-width:760px) {
@@ -206,7 +215,7 @@ const sharedStyle = `
   .post-heading { flex-wrap:wrap; }
   .post-heading h3 { flex-basis:100%; }
   .post-footer { align-items:flex-start; flex-direction:column; }
-  .post-read { margin-left:0; }
+  .post-footer .post-read { margin-left:0; }
   .nav.has-toggle .category-nav-title { display:none; }
   .menu-toggle { display:flex; align-items:center; justify-content:space-between; gap:12px; width:100%; padding:10px 14px; border:1px solid var(--line); border-radius:10px; background:var(--paper); color:var(--green); font:inherit; font-weight:700; cursor:pointer; }
   .menu-toggle::after { content:''; width:8px; height:8px; border-right:2px solid currentColor; border-bottom:2px solid currentColor; transform:rotate(45deg); margin:-4px 2px 0 0; }
@@ -335,19 +344,28 @@ const html = `<!doctype html>
 </body>
 </html>`;
 
+function categoryTrail(category) {
+  return [{ name: '전체 보기', path: '/' }, ...(category.parent ? [category.parent] : []), category];
+}
+
+function breadcrumb(crumbs) {
+  const links = crumbs.slice(0, -1).map(item => `<a href="${item.path}">${esc(item.name)}</a>`);
+  const current = `<span aria-current="page">${esc(crumbs.at(-1).name)}</span>`;
+  const data = JSON.stringify({
+    '@context': 'https://schema.org',
+    '@type': 'BreadcrumbList',
+    itemListElement: crumbs.map((item, i) => ({ '@type': 'ListItem', position: i + 1, name: item.name, item: `${base}${item.path}` })),
+  }).replaceAll('<', '\\u003c');
+  return { markup: `<nav class="breadcrumb" aria-label="현재 위치">${[...links, current].join(' › ')}</nav>`, data };
+}
+
 function categoryPage(category) {
   const subject = categorySubjects[category.path] ?? category.parent?.name;
   const pageTitle = [category.name, subject, '노예민 블로그'].filter(Boolean).join(' | ');
   const canonical = `${base}${category.path}`;
   const children = category.children.map(child => `<li><a href="${child.path}"><strong>${esc(child.name)}</strong><span>${esc(child.description)}</span></a></li>`).join('');
   const childLinks = children ? `<ul class="topic-children" aria-label="하위 카테고리">${children}</ul>` : '';
-  const crumbs = [ { name: '전체 보기', path: '/' }, ...(category.parent ? [category.parent] : []), category ];
-  const breadcrumb = crumbs.slice(0, -1).map(item => `<a href="${item.path}">${esc(item.name)}</a>`).join(' › ');
-  const breadcrumbData = JSON.stringify({
-    '@context': 'https://schema.org',
-    '@type': 'BreadcrumbList',
-    itemListElement: crumbs.map((item, i) => ({ '@type': 'ListItem', position: i + 1, name: item.name, item: `${base}${item.path}` })),
-  }).replaceAll('<', '\\u003c');
+  const trail = breadcrumb(categoryTrail(category));
 
   return `<!doctype html>
 <html lang="ko">
@@ -365,7 +383,7 @@ function categoryPage(category) {
   <meta property="og:description" content="${esc(category.description)}">
   <meta property="og:type" content="website">
   <meta property="og:url" content="${canonical}">
-  <script type="application/ld+json">${breadcrumbData}</script>
+  <script type="application/ld+json">${trail.data}</script>
   <link rel="stylesheet" href="/archive.css">
   <script src="/archive.js" defer></script>
 </head>
@@ -376,7 +394,7 @@ function categoryPage(category) {
     <div class="layout">
       <aside>${categoryMenu(category.path)}</aside>
       <main id="posts">
-        <nav class="breadcrumb" aria-label="현재 위치">${breadcrumb} › <span aria-current="page">${esc(category.name)}</span></nav>
+        ${trail.markup}
         <div class="topic-summary"><h1>${esc(category.name)}</h1><p>${esc(category.description)}</p></div>
         ${childLinks}
         <div class="search"><label for="search">기록 찾기</label><input id="search" type="search" placeholder="이 카테고리에서 검색"></div>
@@ -386,6 +404,45 @@ function categoryPage(category) {
       </main>
     </div>
   </div>
+</body>
+</html>`;
+}
+
+function postPage(post, view) {
+  const category = postCategories.get(post.url);
+  const trail = breadcrumb([...categoryTrail(category), { name: post.title, path: view.path }]);
+  const canonical = `${base}${view.path}`;
+  const pageTitle = `${post.title} | 노예민 블로그`;
+  return `<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${esc(pageTitle)}</title>
+  <meta name="description" content="${esc(view.preview)}">
+  <link rel="canonical" href="${canonical}">
+  <link rel="icon" href="/favicon.ico" sizes="48x48">
+  <meta property="og:site_name" content="${title}">
+  <meta property="og:title" content="${esc(pageTitle)}">
+  <meta property="og:description" content="${esc(view.preview)}">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="${canonical}">
+  <script type="application/ld+json">${trail.data}</script>
+  <link rel="stylesheet" href="/archive.css">
+</head>
+<body>
+  <a class="skip" href="#post">글 소개로 이동</a>
+  <header><div class="top"><a class="brand" href="/">NOYEEHMEEN / SITEMAP</a><nav class="top-menu" aria-label="주요 메뉴"><a href="/aboutus/">인사말</a><a href="${rssUrl}">RSS 피드 ↗</a></nav></div></header>
+  <main class="wrap post-detail" id="post">
+    ${trail.markup}
+    <article>
+      <h1>${esc(post.title)}</h1>
+      <time datetime="${post.date}">${post.date.replaceAll('-','. ')}</time>
+      <p class="post-preview">${esc(view.preview)}</p>
+      ${view.tags}
+      <a class="post-original" href="${post.url}">네이버 블로그 원문 <span aria-hidden="true">↗</span></a>
+    </article>
+  </main>
 </body>
 </html>`;
 }
@@ -404,9 +461,17 @@ for (const category of categoryPages) {
   fs.mkdirSync(directory, { recursive: true });
   fs.writeFileSync(`${directory}index.html`, categoryPage(category));
 }
-const sitemapUrls = ['/', '/aboutus/', ...categoryPages.map(category => category.path)].map(path => `${base}${path}`);
+const postPaths = [];
+for (const post of data) {
+  const view = postPresentation(post);
+  const directory = `dist${view.path}`;
+  fs.mkdirSync(directory, { recursive: true });
+  fs.writeFileSync(`${directory}index.html`, postPage(post, view));
+  postPaths.push(view.path);
+}
+const sitemapUrls = ['/', '/aboutus/', ...categoryPages.map(category => category.path), ...postPaths].map(path => `${base}${path}`);
 const sitemapEntries = sitemapUrls.map(url => `  <url><loc>${esc(url)}</loc></url>`);
 fs.writeFileSync('dist/sitemap.xml', `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${sitemapEntries.join('\n')}\n</urlset>\n`);
 fs.writeFileSync('dist/sitemap.txt', `${sitemapUrls.join('\n')}\n`);
 fs.writeFileSync('dist/.nojekyll','');
-console.log(`Built ${data.length} posts / ${categoryPages.length} category pages; all post links use mobile URLs.`);
+console.log(`Built ${postPaths.length} post pages and ${categoryPages.length} category pages; originals use mobile URLs.`);
