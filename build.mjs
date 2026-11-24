@@ -520,6 +520,7 @@ for (const category of categoryPages) {
 const sitemapUrls = [...sitemapPaths].map(path => `${base}${path}`);
 const sitemapEntries = sitemapUrls.map(url => `  <url><loc>${esc(url)}</loc></url>`);
 fs.writeFileSync('dist/sitemap.xml', `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${sitemapEntries.join('\n')}\n</urlset>\n`);
+fs.copyFileSync('dist/sitemap.xml', 'dist/sitemap-posts.xml');
 fs.writeFileSync('dist/sitemap.txt', `${sitemapUrls.join('\n')}\n`);
 fs.writeFileSync('dist/.nojekyll','');
 console.log(`Built ${groupCount} groups of up to ${linksPerGroup} links for ${data.length} Naver posts.`);
